@@ -1,0 +1,52 @@
+﻿source_type,source,author,n,clickbait_n,informative_n,avg_clickbait_score,clickbait_rate
+internacional,CNN Espanol,CNN en Español,6,2,4,0.15666666666666665,0.3333333333333333
+nacional,BioBioChile,Nicolás Díaz,5,1,4,0.11600000000000002,0.2
+internacional,BBC Mundo,Redacción,9,1,8,0.07,0.1111111111111111
+nacional,La Cuarta,Paulo Quinteros,24,1,23,0.022083333333333333,0.041666666666666664
+nacional,Meganoticias,Meganoticias,149,2,147,0.031879194630872486,0.013422818791946308
+internacional,Clarin,Redacción Clarín,84,1,83,0.017023809523809524,0.011904761904761904
+nacional,El Mostrador,https://www.facebook.com/elmostrador/,99,1,98,0.044444444444444446,0.010101010101010102
+nacional,CNN Chile,CNN Chile,130,0,130,0.014384615384615385,0.0
+nacional,Cooperativa,Cooperativa.cl,121,0,121,0.015454545454545455,0.0
+internacional,BBC Mundo,BBC News Mundo,72,0,72,0.00986111111111111,0.0
+internacional,DW Espanol,Deutsche Welle,47,0,47,0.0,0.0
+nacional,La Cuarta,Diego Ramírez,26,0,26,0.04230769230769231,0.0
+nacional,La Cuarta,Bernardita Villa,20,0,20,0.043,0.0
+internacional,France 24 Espanol,FRANCE24,16,0,16,0.019375,0.0
+nacional,La Cuarta,Juan Carlos Muñoz,16,0,16,0.009375,0.0
+nacional,La Tercera,Sebastián Escobar F.,16,0,16,0.0,0.0
+nacional,La Cuarta,Erasmo Tauran,15,0,15,0.03933333333333334,0.0
+nacional,Cooperativa,Autor : Cooperativa.cl,14,0,14,0.018571428571428572,0.0
+nacional,Publimetro Chile,Martín Toro,14,0,14,0.045,0.0
+internacional,Infobae,Newsroom Infobae,13,0,13,0.007692307692307693,0.0
+nacional,La Cuarta,Marco Oyarzún,13,0,13,0.015384615384615385,0.0
+nacional,Publimetro Chile,Sebastian Huerta Viurcos,13,0,13,0.0623076923076923,0.0
+nacional,BioBioChile,Jaime Zavala,11,0,11,0.03272727272727272,0.0
+nacional,Publimetro Chile,Angélica Baeza,11,0,11,0.0,0.0
+internacional,Clarin,Clarin.com - Home,10,0,10,0.0,0.0
+nacional,BioBioChile,Pablo Velozo,9,0,9,0.0,0.0
+nacional,BioBioChile,Samuel Fuentes,8,0,8,0.0125,0.0
+nacional,La Tercera,Sofía Álvarez,8,0,8,0.0,0.0
+nacional,Publimetro Chile,María Paz Núñez,8,0,8,0.02,0.0
+nacional,BioBioChile,Felipe Delgado,7,0,7,0.037142857142857144,0.0
+nacional,BioBioChile,Javier Zamorano,7,0,7,0.037142857142857144,0.0
+nacional,La Cuarta,Consuelo Calderón,7,0,7,0.015714285714285715,0.0
+nacional,La Cuarta,Guido Macari Marimón,7,0,7,0.037142857142857144,0.0
+nacional,La Tercera,Antonella Cicarelli,7,0,7,0.0,0.0
+nacional,La Tercera,Javiera Ortiz,7,0,7,0.014285714285714287,0.0
+nacional,BioBioChile,Antonio González,6,0,6,0.049999999999999996,0.0
+nacional,BioBioChile,Valentina Espinoza Poblete,6,0,6,0.024999999999999998,0.0
+nacional,La Cuarta,Bastián Escalona Ampuero,6,0,6,0.06833333333333334,0.0
+internacional,El Pais,EL PAÍS,5,0,5,0.05,0.0
+internacional,France 24 Espanol,France 24,5,0,5,0.02,0.0
+internacional,Infobae,Francisco González Tomadin,5,0,5,0.06000000000000001,0.0
+internacional,Infobae,INFOBAE,5,0,5,0.04,0.0
+internacional,Infobae,Ismael Yasnikowski,5,0,5,0.052000000000000005,0.0
+nacional,BioBioChile,Camila Muñoz Gonzalez,5,0,5,0.0,0.0
+nacional,BioBioChile,Constanza Carrillo Silva,5,0,5,0.0,0.0
+nacional,BioBioChile,Daniela Salgado,5,0,5,0.0,0.0
+nacional,BioBioChile,Jean Valencia,5,0,5,0.0,0.0
+nacional,CNN Chile,Polet Herrera,5,0,5,0.0,0.0
+nacional,El Desconcierto,Cristian Neira,5,0,5,0.0,0.0
+nacional,El Desconcierto,Nicole Donoso,5,0,5,0.0,0.0
+nacional,The Clinic,The Clinic,5,0,5,0.052000000000000005,0.0
