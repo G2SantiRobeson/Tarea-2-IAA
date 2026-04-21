@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 import time
 from collections import defaultdict, deque
 from datetime import datetime, timezone
@@ -360,6 +361,32 @@ def parse_sitemap_locations(xml_text: str) -> tuple[list[str], bool]:
     return [loc for loc in locs if loc], is_index
 
 
+def parse_sitemap_article_entries(xml_text: str) -> tuple[list[dict], bool]:
+    soup = BeautifulSoup(xml_text, "xml")
+    is_index = bool(soup.find("sitemapindex"))
+    entries: list[dict] = []
+    for url_tag in soup.find_all("url"):
+        url = first_tag_text(url_tag, ["loc"])
+        if not looks_like_article_url(url):
+            continue
+        news_tag = url_tag.find("news")
+        headline = first_tag_text(news_tag, ["news:title", "title"]) if news_tag else ""
+        entries.append(
+            {
+                "url": url,
+                "headline": headline or headline_from_url_slug(url),
+                "headline_source": "news_sitemap" if headline else "sitemap_url_slug",
+                "published_at": (
+                    first_tag_text(news_tag, ["news:publication_date", "publication_date"])
+                    if news_tag
+                    else first_tag_text(url_tag, ["lastmod"])
+                ),
+                "section": first_tag_text(news_tag, ["news:genres", "genres"]) if news_tag else "",
+            }
+        )
+    return entries, is_index
+
+
 def discover_sitemap_urls_from_robots(session: requests.Session, base_url: str) -> list[str]:
     robots_url = f"{base_url.rstrip('/')}/robots.txt"
     text = fetch_text(session, robots_url, timeout=15, retries=1)
@@ -406,6 +433,18 @@ def looks_like_article_url(url: str) -> bool:
     return len(path_parts) >= 2 or any(ch.isdigit() for ch in clean_path)
 
 
+def headline_from_url_slug(url: str) -> str:
+    path_parts = [part for part in urlparse(url).path.split("/") if part]
+    if not path_parts:
+        return ""
+    slug = path_parts[-1]
+    slug = re.sub(r"\.(s?html?|php|aspx?)$", "", slug, flags=re.IGNORECASE)
+    slug = re.sub(r"[_-]+", " ", slug)
+    slug = re.sub(r"\b\d{6,}\b", " ", slug)
+    slug = re.sub(r"\b[a-f0-9]{10,}\b", " ", slug, flags=re.IGNORECASE)
+    return clean_text(slug)
+
+
 def iter_article_urls_from_sitemaps(
     source: dict,
     session: requests.Session,
@@ -446,15 +485,92 @@ def iter_article_urls_from_sitemaps(
     return article_urls
 
 
+def iter_article_entries_from_sitemaps(
+    source: dict,
+    session: requests.Session,
+    *,
+    max_sitemaps: int = 60,
+    max_urls: int = 600,
+) -> list[dict]:
+    base = source["base_url"].rstrip("/")
+    initial_sitemaps = []
+    initial_sitemaps.extend(source.get("sitemap_urls", []))
+    initial_sitemaps.extend(discover_sitemap_urls_from_robots(session, base))
+    initial_sitemaps.append(f"{base}/sitemap.xml")
+    queue = deque(dict.fromkeys(url for url in initial_sitemaps if url))
+    seen_sitemaps: set[str] = set()
+    seen_urls: set[str] = set()
+    article_entries: list[dict] = []
+
+    while queue and len(seen_sitemaps) < max_sitemaps and len(article_entries) < max_urls:
+        sitemap_url = queue.popleft()
+        if sitemap_url in seen_sitemaps:
+            continue
+        seen_sitemaps.add(sitemap_url)
+        xml_text = fetch_text(session, sitemap_url, timeout=20, retries=1)
+        if not xml_text:
+            continue
+
+        locs, is_index = parse_sitemap_locations(xml_text)
+        for loc in locs:
+            lower = loc.lower()
+            if is_index or lower.endswith(".xml") or "sitemap" in lower:
+                if loc not in seen_sitemaps and len(seen_sitemaps) + len(queue) < max_sitemaps:
+                    queue.append(loc)
+
+        entries, _ = parse_sitemap_article_entries(xml_text)
+        for entry in entries:
+            if len(article_entries) >= max_urls:
+                break
+            url = clean_text(entry.get("url"))
+            if url and url not in seen_urls:
+                seen_urls.add(url)
+                article_entries.append(entry)
+
+    return article_entries
+
+
 def collect_sitemap_records(
     source: dict,
     session: requests.Session,
     *,
     max_records: int,
     delay_seconds: float,
+    fetch_article_pages: bool = True,
 ) -> list[dict]:
     records: list[dict] = []
-    for url in iter_article_urls_from_sitemaps(source, session, max_urls=max_records * 3):
+    fallback_urls: list[str] = []
+    for entry in iter_article_entries_from_sitemaps(source, session, max_urls=max_records * 3):
+        if len(records) >= max_records:
+            break
+        headline = clean_text(entry.get("headline"))
+        url = clean_text(entry.get("url"))
+        if looks_like_valid_headline(headline) and (
+            entry.get("headline_source") != "sitemap_url_slug" or not fetch_article_pages
+        ):
+            records.append(
+                make_record(
+                    headline=headline,
+                    url=url,
+                    source=source,
+                    published_at=entry.get("published_at", ""),
+                    section=entry.get("section", ""),
+                    collection_method=entry.get("headline_source", "news_sitemap"),
+                )
+            )
+        elif url:
+            fallback_urls.append(url)
+
+    if len(records) >= max_records:
+        return records
+
+    if not fetch_article_pages:
+        return records
+
+    if not fallback_urls:
+        fallback_urls = iter_article_urls_from_sitemaps(source, session, max_urls=max_records * 3)
+
+    for url in fallback_urls:
         if len(records) >= max_records:
             break
         html = fetch_text(session, url, timeout=20, retries=1)
@@ -495,6 +611,7 @@ def scrape_sources(
     max_per_source: int = 350,
     delay_seconds: float = 0.8,
     include_sitemaps: bool = True,
+    fetch_article_pages: bool = True,
 ) -> list[dict]:
     session = build_session()
     rows: list[dict] = []
@@ -526,6 +643,7 @@ def scrape_sources(
             session,
             max_records=remaining_for_source,
             delay_seconds=delay_seconds,
+            fetch_article_pages=fetch_article_pages,
         ):
             if group_counts[group] >= target_per_group or per_source_added >= max_per_source:
                 break
@@ -607,9 +725,10 @@ def scrape_fake_news_claims(
     sources: list[dict],
     *,
     target_total: int = 1000,
-    max_per_source: int = 250,
+    max_per_source: int = 400,
     delay_seconds: float = 0.8,
     keep_unrated: bool = True,
+    fetch_article_pages: bool = True,
 ) -> list[dict]:
     session = build_session()
     rows: list[dict] = []
@@ -619,10 +738,55 @@ def scrape_fake_news_claims(
         if len(rows) >= target_total:
             break
         candidate_urls: list[str] = []
+        source_added = 0
         for record in collect_feed_records(source, session):
+            if not fetch_article_pages:
+                if source_added >= max_per_source:
+                    break
+                record = dict(record)
+                record["collection_method"] = "factcheck_feed"
+                record["fact_check_rating"] = clean_text(source.get("source_kind"))
+                record["fact_check_title"] = ""
+                if add_unique_record(rows, seen_keys, record):
+                    source_added += 1
+                    if len(rows) >= target_total:
+                        break
+                continue
             url = clean_text(record.get("url"))
             if url:
                 candidate_urls.append(url)
+
+        if len(rows) >= target_total:
+            break
+
+        if not fetch_article_pages:
+            for entry in iter_article_entries_from_sitemaps(
+                source,
+                session,
+                max_sitemaps=80,
+                max_urls=max_per_source * 3,
+            ):
+                if len(rows) >= target_total or source_added >= max_per_source:
+                    break
+                headline = clean_text(entry.get("headline"))
+                if not looks_like_valid_headline(headline):
+                    continue
+                record = make_record(
+                    headline=headline,
+                    url=clean_text(entry.get("url")),
+                    source=source,
+                    published_at=entry.get("published_at", ""),
+                    section=entry.get("section", ""),
+                    collection_method=f"factcheck_{entry.get('headline_source', 'sitemap')}",
+                    extra={
+                        "fact_check_rating": clean_text(source.get("source_kind")),
+                        "fact_check_title": "",
+                    },
+                )
+                if add_unique_record(rows, seen_keys, record):
+                    source_added += 1
+            continue
+
         candidate_urls.extend(
             iter_article_urls_from_sitemaps(source, session, max_sitemaps=35, max_urls=max_per_source * 3)
         )

@@ -10,7 +10,7 @@ import pandas as pd
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from src.clickbait_rules import RULE_VERSION, classify_headline
+from src.clickbait_rules import DEFAULT_CLICKBAIT_THRESHOLD, RULE_VERSION, classify_headline
 from src.eda import write_eda_outputs
 from src.io_utils import read_csv, write_csv
 from src.text_utils import clean_text, headline_key
@@ -22,9 +22,32 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--input", default="data/raw/headlines_raw.csv", help="CSV creado por 01_web_scraping.py.")
     parser.add_argument("--output", default="data/processed/dataset_clickbait.csv", help="CSV curado y clasificado.")
-    parser.add_argument("--threshold", type=float, default=0.35, help="Umbral del score para etiqueta clickbait.")
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=DEFAULT_CLICKBAIT_THRESHOLD,
+        help="Umbral del score para etiqueta clickbait.",
+    )
     parser.add_argument("--review-margin", type=float, default=0.08, help="Margen alrededor del umbral para revision manual.")
     parser.add_argument("--seed", type=int, default=42, help="Semilla para split train/validation/test.")
+    parser.add_argument(
+        "--target-total",
+        type=int,
+        default=None,
+        help="Cantidad exacta global de filas del dataset final. Si se usa --target-per-source-type, se ignora.",
+    )
+    parser.add_argument(
+        "--target-per-source-type",
+        type=int,
+        default=1500,
+        help="Cantidad exacta de filas por source_type nacional/internacional.",
+    )
+    parser.add_argument(
+        "--target-clickbait",
+        type=int,
+        default=250,
+        help="Cantidad exacta total de casos clickbait en el dataset final.",
+    )
     return parser.parse_args()
 
 
@@ -46,6 +69,66 @@ def assign_splits(df: pd.DataFrame, seed: int = 42) -> pd.Series:
     return split.fillna("train")
 
 
+def select_target_distribution(
+    df: pd.DataFrame,
+    *,
+    target_total: int | None,
+    target_per_source_type: int | None,
+    target_clickbait: int,
+    seed: int,
+) -> pd.DataFrame:
+    if target_per_source_type is not None:
+        if target_per_source_type <= 0:
+            raise ValueError("--target-per-source-type debe ser mayor que 0.")
+        target_groups = ["nacional", "internacional"]
+        target_total = target_per_source_type * len(target_groups)
+    elif target_total is None:
+        raise ValueError("Debes indicar --target-total o --target-per-source-type.")
+    elif target_total <= 0:
+        raise ValueError("--target-total debe ser mayor que 0.")
+
+    if target_clickbait < 0 or target_clickbait > target_total:
+        raise ValueError("--target-clickbait debe estar entre 0 y el total objetivo.")
+
+    clickbait = df[df["label"] == "clickbait"]
+    informative = df[df["label"] == "informativo"]
+
+    if len(clickbait) < target_clickbait:
+        raise ValueError(
+            "No hay suficientes filas para cumplir la distribucion solicitada: "
+            f"clickbait disponibles={len(clickbait)} requeridos={target_clickbait}. "
+            "Ajusta --threshold o vuelve a ejecutar el scraping para obtener mas datos."
+        )
+
+    clickbait_sample = clickbait.sample(n=target_clickbait, random_state=seed)
+    samples = [clickbait_sample]
+
+    if target_per_source_type is not None:
+        for offset, group_name in enumerate(target_groups, start=1):
+            selected_group_n = int((clickbait_sample["source_type"] == group_name).sum())
+            required_informative = target_per_source_type - selected_group_n
+            group_informative = informative[informative["source_type"] == group_name]
+            if required_informative < 0 or len(group_informative) < required_informative:
+                raise ValueError(
+                    "No hay suficientes filas informativas para cumplir el balance por grupo: "
+                    f"{group_name} disponibles={len(group_informative)} requeridas={required_informative}. "
+                    "Vuelve a ejecutar el scraping para obtener mas datos."
+                )
+            samples.append(group_informative.sample(n=required_informative, random_state=seed + offset))
+    else:
+        target_informative = target_total - target_clickbait
+        if len(informative) < target_informative:
+            raise ValueError(
+                "No hay suficientes filas informativas para cumplir la distribucion solicitada: "
+                f"informativo disponibles={len(informative)} requeridos={target_informative}. "
+                "Vuelve a ejecutar el scraping para obtener mas datos."
+            )
+        samples.append(informative.sample(n=target_informative, random_state=seed + 1))
+
+    selected = pd.concat(samples, ignore_index=True)
+    return selected.sample(frac=1, random_state=seed + 2).reset_index(drop=True)
+
+
 def main() -> None:
     args = parse_args()
     input_path = ROOT / args.input
@@ -64,6 +147,13 @@ def main() -> None:
     df["clickbait_reasons"] = predictions.map(lambda pred: ";".join(pred.reasons))
     df["needs_review"] = predictions.map(lambda pred: pred.needs_review)
     df["labeling_method"] = RULE_VERSION
+    df = select_target_distribution(
+        df,
+        target_total=args.target_total,
+        target_per_source_type=args.target_per_source_type,
+        target_clickbait=args.target_clickbait,
+        seed=args.seed,
+    )
     df["split"] = assign_splits(df, args.seed)
 
     ordered_cols = [

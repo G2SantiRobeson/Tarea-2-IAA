@@ -20,9 +20,14 @@ def parse_args() -> argparse.Namespace:
         description="Bonus: obtiene claims falsos desde sitios de fact-checking y arma dataset multiclase."
     )
     parser.add_argument("--target-fake", type=int, default=1000, help="Cantidad objetivo de titulares/claims fake news.")
-    parser.add_argument("--max-per-source", type=int, default=300, help="Tope por sitio de fact-checking.")
+    parser.add_argument("--max-per-source", type=int, default=400, help="Tope por sitio de fact-checking o satira.")
     parser.add_argument("--delay", type=float, default=0.8, help="Pausa entre descargas de paginas.")
     parser.add_argument("--strict-rating", action="store_true", help="Conserva solo paginas con rating falso/enganoso explicito.")
+    parser.add_argument(
+        "--no-article-pages",
+        action="store_true",
+        help="No descarga paginas completas; usa RSS y titulos presentes en sitemaps de fact-checking.",
+    )
     parser.add_argument("--output", default="data/raw/fake_news_headlines.csv", help="CSV de fake news extraidas.")
     parser.add_argument(
         "--base-dataset",
@@ -49,7 +54,9 @@ def normalize_fake_frame(df: pd.DataFrame) -> pd.DataFrame:
     df["clickbait_score"] = ""
     df["clickbait_reasons"] = ""
     df["needs_review"] = False
-    df["labeling_method"] = "claimreview-factcheck-v1.0"
+    df["labeling_method"] = df["fact_check_rating"].map(
+        lambda rating: "satire-source-v1.0" if clean_text(rating).lower() == "satire" else "claimreview-factcheck-v1.0"
+    )
     df["split"] = "train"
     return df.drop(columns=["headline_key"])
 
@@ -62,6 +69,7 @@ def main() -> None:
         max_per_source=args.max_per_source,
         delay_seconds=args.delay,
         keep_unrated=not args.strict_rating,
+        fetch_article_pages=not args.no_article_pages,
     )
     fake_df = normalize_fake_frame(pd.DataFrame(records))
     fake_output = write_csv(fake_df, ROOT / args.output)
@@ -89,4 +97,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

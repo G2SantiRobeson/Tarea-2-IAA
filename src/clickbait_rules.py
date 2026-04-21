@@ -6,7 +6,8 @@ from dataclasses import dataclass
 from .text_utils import clean_text, normalize_for_matching
 
 
-RULE_VERSION = "weak-rules-v1.0"
+RULE_VERSION = "weak-rules-v1.2"
+DEFAULT_CLICKBAIT_THRESHOLD = 0.35
 
 
 SENSATIONAL_WORDS = {
@@ -65,6 +66,62 @@ CURIOSITY_PHRASES = {
 }
 
 
+CLICKBAIT_FRAMING_PHRASES = {
+    "adios a",
+    "asi es",
+    "asi fue",
+    "asi luce",
+    "asi quedo",
+    "asi reacciono",
+    "como ver",
+    "conoce los detalles",
+    "donde ver",
+    "el secreto",
+    "el truco",
+    "esta es",
+    "esta es la razon",
+    "estas son",
+    "este es",
+    "estos son",
+    "fecha exacta",
+    "hora y donde",
+    "la verdad que",
+    "la verdad sobre",
+    "lo que dice",
+    "lo que muchos",
+    "los mejores",
+    "los peores",
+    "nadie lo esperaba",
+    "no lo esperaba",
+    "no lo esperabamos",
+    "no te puedes perder",
+    "por esta razon",
+    "que debes saber",
+    "que dice",
+    "quien es",
+    "quienes son",
+    "revisa aqui",
+    "sin que te des cuenta",
+    "te contamos",
+    "todo lo que debes saber",
+}
+
+
+REACTION_PHRASES = {
+    "aclaro supuesto",
+    "desato reacciones",
+    "duro descargo",
+    "estallo tras",
+    "fuerte cruce",
+    "genero ola de reacciones",
+    "lluvia de criticas",
+    "no paso desapercibido",
+    "rompio el silencio",
+    "salio jugando",
+    "sin filtro",
+}
+
+
 DIRECT_ADDRESS = {
     "tu",
     "usted",
@@ -91,7 +148,10 @@ VAGUE_START_RE = re.compile(
 )
 
 
-QUESTION_START_RE = re.compile(r"^\s*(que|como|cuando|donde|por que|cuanto|quien)\b", flags=re.IGNORECASE)
+QUESTION_START_RE = re.compile(r"^\s*(que|como|cuando|donde|por que|cuanto|cual|cuales|quien)\b", flags=re.IGNORECASE)
+
+
+GENERIC_LISTICLE_RE = re.compile(r"^\s*(?:[2-9]|1\d|20)\s+\w+", flags=re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -125,6 +185,22 @@ def score_clickbait(headline: str) -> tuple[float, list[str]]:
     if curiosity_hits:
         score += min(0.36, 0.20 + 0.06 * len(curiosity_hits))
         reasons.append("curiosity_gap:" + ",".join(curiosity_hits[:4]))
+        if any(text.startswith(hit) for hit in curiosity_hits):
+            score += 0.10
+            reasons.append("curiosity_gap_opener")
+        if ":" in raw:
+            score += 0.10
+            reasons.append("curiosity_colon_framing")
+
+    framing_hits = _contains_any(text, CLICKBAIT_FRAMING_PHRASES)
+    if framing_hits:
+        score += min(0.20, 0.08 + 0.04 * len(framing_hits))
+        reasons.append("clickbait_framing:" + ",".join(framing_hits[:4]))
+
+    reaction_hits = _contains_any(text, REACTION_PHRASES)
+    if reaction_hits:
+        score += min(0.24, 0.12 + 0.04 * len(reaction_hits))
+        reasons.append("reaction_hook:" + ",".join(reaction_hits[:4]))
 
     address_hits = _contains_any(text, DIRECT_ADDRESS)
     if address_hits:
@@ -132,8 +208,15 @@ def score_clickbait(headline: str) -> tuple[float, list[str]]:
         reasons.append("direct_address:" + ",".join(address_hits[:4]))
 
     if LISTICLE_RE.search(text):
-        score += 0.18
+        score += 0.23
         reasons.append("listicle_format")
+    elif GENERIC_LISTICLE_RE.search(text):
+        score += 0.23
+        reasons.append("numbered_list_format")
+
+    if text.startswith("adios a ") or (text.startswith("ni ") and " ni " in text):
+        score += 0.23
+        reasons.append("contrast_hook")
 
     if VAGUE_START_RE.search(text):
         score += 0.10
@@ -145,6 +228,9 @@ def score_clickbait(headline: str) -> tuple[float, list[str]]:
         if QUESTION_START_RE.search(text):
             score += 0.05
             reasons.append("question_opener")
+    elif QUESTION_START_RE.search(text):
+        score += 0.16
+        reasons.append("question_opener_without_punctuation")
 
     if "!" in raw or "¡" in raw:
         score += 0.08
@@ -175,7 +261,12 @@ def score_clickbait(headline: str) -> tuple[float, list[str]]:
     return score, reasons
 
 
-def classify_headline(headline: str, *, threshold: float = 0.35, review_margin: float = 0.08) -> ClickbaitPrediction:
+def classify_headline(
+    headline: str,
+    *,
+    threshold: float = DEFAULT_CLICKBAIT_THRESHOLD,
+    review_margin: float = 0.08,
+) -> ClickbaitPrediction:
     score, reasons = score_clickbait(headline)
     label = "clickbait" if score >= threshold else "informativo"
     needs_review = abs(score - threshold) <= review_margin
